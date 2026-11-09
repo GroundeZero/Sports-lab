@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Matchlab: simulated match probabilities</title>
+<style>
+:root{--bg:#e8edf2;--ink:#14202b;--mute:#566574;--card:#fff;--line:#cfd8e1;--blue:#2b4fd8;--hi:#1f8f5f;--mid:#c98a10;--lo:#8a97a4}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:640px;margin:0 auto;padding:20px 16px 48px}
+h1{font:700 30px/1.1 Georgia,"Iowan Old Style",serif;margin:8px 0 6px;letter-spacing:-.5px}
+.sub{color:var(--mute);margin:0 0 20px}
+form{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:12px}
+label{display:grid;gap:4px;font-size:14px;color:var(--mute)}
+input,select,textarea{font:inherit;color:var(--ink);padding:11px;border:1px solid var(--line);border-radius:6px;background:#fff;width:100%}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.tabs button{border:0;background:#fff;padding:11px;font:inherit;color:var(--mute);cursor:pointer}
+.tabs button[aria-pressed=true]{background:var(--blue);color:#fff}
+.go{background:var(--ink);color:#fff;border:0;border-radius:8px;padding:14px;font:600 16px inherit;cursor:pointer}
+.go:disabled{opacity:.5}
+#out{margin-top:22px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.warn{border-left:4px solid var(--mid)}
+.err{border-left:4px solid #b3261e}
+h2{font:700 22px/1.2 Georgia,serif;margin:0 0 4px}
+h3{font-size:15px;margin:0 0 8px}
+.small{font-size:14px;color:var(--mute)}
+ul{margin:6px 0 0;padding-left:20px}
+.m{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:9px 0;border-top:1px solid var(--line);align-items:baseline}
+.m:first-of-type{border-top:0}
+.pct{font:700 22px Georgia,serif;text-align:right}
+.bar{grid-column:1/3;height:6px;background:#e3e9ef;border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%}
+.fair{grid-column:1/3;font-size:13px;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>Matchlab</h1>
+<p class="sub">Pick a match. The site pulls form, head-to-head and team news, then simulates it 20,000 times.</p>
+<form id="f">
+  <div class="tabs" role="group" aria-label="Sport">
+    <button type="button" data-s="football" aria-pressed="true">Football</button>
+    <button type="button" data-s="basketball" aria-pressed="false">Basketball</button>
+  </div>
+  <label>League<select id="league"></select></label>
+  <label>Home team<input id="home" placeholder="Arsenal" autocomplete="off" required></label>
+  <label>Away team<input id="away" placeholder="Chelsea" autocomplete="off" required></label>
+  <label>Team news you know about (optional)<textarea id="news" rows="3" placeholder="e.g. Saka doubtful. Arsenal play Bayern on Tuesday."></textarea></label>
+  <button class="go" id="go">Analyse match</button>
+</form>
+<div id="out" aria-live="polite"></div>
+</main>
+<script>
+const L={football:['Premier League','La Liga','Serie A','Bundesliga','Ligue 1','Champions League','Europa League','Other'],
+basketball:['NBA','EuroLeague','EuroCup','LNB Pro A (France)','ACB (Spain)','Other']};
+let sport='football';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function setSport(s){sport=s;document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.s===s));
+ $('league').innerHTML=L[s].map(x=>`<option>${x}</option>`).join('');
+ $('home').placeholder=s==='football'?'Arsenal':'Paris Basketball';$('away').placeholder=s==='football'?'Chelsea':'Monaco'}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>setSport(b.dataset.s));
+setSport('football');
+const col=p=>p>=.7?'var(--hi)':p>=.5?'var(--mid)':'var(--lo)';
+function teamBox(t){const n=t.next.map(x=>`<li>${esc(x.date)}: ${esc(x.comp)} vs ${esc(x.vs)}</li>`).join('');
+ return `<div class="box"><h3>${esc(t.name)}</h3><div class="small">Last ${t.games}: ${esc(t.form)||'n/a'}</div>
+ ${n?`<div class="small" style="margin-top:6px">Upcoming</div><ul class="small">${n}</ul>`:''}
+ ${t.injuries.length?`<div class="small" style="margin-top:6px">Injury list</div><ul class="small">${t.injuries.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:''}</div>`}
+function render(r){
+ if(r.status==='error')return `<div class="box err">${esc(r.message)}</div>`;
+ if(r.status==='insufficient')return `<div class="box warn"><h2>Not enough data</h2><p class="small">No prediction was made.</p><ul>${r.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
+ let h=`<div class="box"><h2>${esc(r.home.name)} vs ${esc(r.away.name)}</h2><div class="small">${r.sims.toLocaleString()} simulations. Expected: ${Object.entries(r.expected).map(([k,v])=>esc(k)+' '+v).join(', ')}</div></div>`;
+ h+=`<div class="box"><h3>Context from AI reading</h3><ul>${r.adj.notes.map(n=>`<li>${esc(n)}</li>`).join('')||'<li>No adjustments.</li>'}</ul>
+ <div class="small" style="margin-top:8px">Applied: ${esc(r.home.name)} x${r.adj.home_mult.toFixed(2)}, ${esc(r.away.name)} x${r.adj.away_mult.toFixed(2)}, intensity x${r.adj.intensity.toFixed(2)}. The AI only nudges inputs. The percentages come from the simulation.</div></div>`;
+ const g={};r.markets.forEach(m=>(g[m.g]=g[m.g]||[]).push(m));
+ for(const k in g){h+=`<div class="box"><h3>${esc(k)}</h3>`+g[k].map(m=>`<div class="m"><span>${esc(m.l)}</span><span class="pct" style="color:${col(m.p)}">${Math.round(m.p*100)}%</span>
+  <div class="bar"><i style="width:${m.p*100}%;background:${col(m.p)}"></i></div>
+  <div class="fair">Fair odds ${(1/Math.max(m.p,.01)).toFixed(2)}${m.u!=null?` · Under ${Math.round(m.u*100)}%`:''}</div></div>`).join('')+`</div>`}
+ h+=teamBox(r.home)+teamBox(r.away);
+ if(r.h2h.length)h+=`<div class="box"><h3>Recent meetings</h3><ul class="small">${r.h2h.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
+ h+=`<p class="small">Compare fair odds with the bookmaker's price. A bet only has value when the bookmaker pays more than the fair odds. These are model estimates from limited recent data, not guarantees.</p>`;
+ return h}
+$('f').onsubmit=async e=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='Simulating…';$('out').innerHTML='';
+ try{const r=await fetch('/.netlify/functions/analyze',{method:'POST',body:JSON.stringify({sport,league:$('league').value,home:$('home').value.trim(),away:$('away').value.trim(),news:$('news').value.trim()})});
+  $('out').innerHTML=render(await r.json())}catch{$('out').innerHTML='<div class="box err">Could not reach the server. Check your connection and try again.</div>'}
+ b.disabled=false;b.textContent='Analyse match'};
+</script>
+</body>
+</html>
